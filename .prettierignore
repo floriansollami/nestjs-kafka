@@ -1,0 +1,13 @@
+**/*.js
+**/dist/*
+**/__generated__/**
+**/*.hbs
+/contracts
+/coverage
+*-lock.json
+/contracts/json/**
+/documentation/**
+.idea/**
+CHANGELOG.md
+lerna.json
+package.json
