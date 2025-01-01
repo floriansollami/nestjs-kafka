@@ -52,15 +52,32 @@
     "test": "node --test dist",
     "local-release": "changeset version && changeset publish"
   },
+  "dependencies": {
+    "@hpcc-js/wasm": "^2.22.4",
+    "@kafkajs/confluent-schema-registry": "^3.4.1",
+    "avsc": "^5.7.7",
+    "kafkajs": "^2.2.4",
+    "kafkajs-snappy": "^1.1.0",
+    "long": "^5.2.3",
+    "lz4": "^0.6.5"
+  },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.17.2",
     "@changesets/cli": "^2.27.11",
     "@eslint/js": "^9.17.0",
-    "@types/node": "^22.10.2",
+    "@types/node": "^22.10.3",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.19.0"
+    "typescript-eslint": "^8.19.0",
+    "@nestjs/platform-fastify": "^10.4.8",
+    "@nestjs/testing": "^10.4.8",
+    "@types/lz4": "^0.6.4"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.4.15",
+    "@nestjs/core": "^10.4.15",
+    "@nestjs/microservices": "^10.4.15"
   }
 }
