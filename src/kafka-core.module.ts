@@ -1,4 +1,3 @@
-import { Zstd } from '@hpcc-js/wasm-zstd';
 import {
   Module,
   type DynamicModule,
@@ -6,9 +5,7 @@ import {
   type Provider,
 } from '@nestjs/common';
 import { CompressionCodecs, CompressionTypes } from 'kafkajs';
-import SnappyCodec from 'kafkajs-snappy';
-import { decode, encode } from 'lz4';
-import { createLz4Codec, createZstdCodec, type Codec } from './codecs/index.js';
+import { createKafkaCodec, type Codec } from './compression/index.js';
 import type { KafkaModuleAsyncOptions } from './kafka-options.types.js';
 import { LZ4_CODEC, SNAPPY_CODEC, ZSTD_CODEC } from './kafka.constants.js';
 
@@ -18,35 +15,44 @@ export class KafkaCoreModule implements OnApplicationShutdown {
   constructor() {}
 
   static forRootAsync(options: KafkaModuleAsyncOptions): DynamicModule {
+
+    // TODO ajouter un provider pour l'instance
+    // kafkajs comme ca quand confluent
+    // proposera le sien
+    // que un seul endroit a changer ?
+    // je veux 2 instances differente de toute facon
+    // SAUF SI JUTILISE UNE INTERFACE ???? OUI!
+    // TROUVER UNE SOLUTION
     const lz4CodecProvider: Provider = {
       provide: LZ4_CODEC,
       useFactory: async (): Promise<Codec> => {
-        const lz4Codec = createLz4Codec({ encode, decode });
+        const lz4Codec = await createKafkaCodec('LZ4');
 
-        CompressionCodecs[CompressionTypes.LZ4] = lz4Codec;
+        CompressionCodecs[CompressionTypes.LZ4] = (): Codec => lz4Codec;
 
-        return lz4Codec();
+        return lz4Codec;
       },
     };
 
     const snappyCodecProvider: Provider = {
       provide: SNAPPY_CODEC,
       useFactory: async (): Promise<Codec> => {
-        CompressionCodecs[CompressionTypes.Snappy] = SnappyCodec;
+        const snappyCodec = await createKafkaCodec('SNAPPY');
 
-        return SnappyCodec();
+        CompressionCodecs[CompressionTypes.Snappy] = (): Codec => snappyCodec;
+
+        return snappyCodec;
       },
     };
 
     const zstdCodecProvider: Provider = {
       provide: ZSTD_CODEC,
       useFactory: async (): Promise<Codec> => {
-        const zstd = await Zstd.load();
-        const zstdCodec = createZstdCodec(zstd);
+        const zstdCodec = await createKafkaCodec('ZSTD');
 
-        CompressionCodecs[CompressionTypes.ZSTD] = zstdCodec;
+        CompressionCodecs[CompressionTypes.ZSTD] = (): Codec => zstdCodec;
 
-        return zstdCodec();
+        return zstdCodec;
       },
     };
 
