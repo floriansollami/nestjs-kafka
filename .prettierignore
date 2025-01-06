@@ -1,13 +1,8 @@
-**/*.js
-**/dist/*
-**/__generated__/**
-**/*.hbs
-/contracts
-/coverage
-*-lock.json
-/contracts/json/**
-/documentation/**
-.idea/**
-CHANGELOG.md
-lerna.json
-package.json
+# Ignore dependency locks and build artifacts
+node_modules/
+dist/
+build/
+package-lock.json
+
+# Ignore large auto-generated files
+coverage/

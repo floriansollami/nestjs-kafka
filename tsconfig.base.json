@@ -24,9 +24,7 @@
     "sourceMap": true,
     "strict": true,
     "target": "es2023",
-    "types": ["vitest/globals"],
     "useUnknownInCatchVariables": true,
     "verbatimModuleSyntax": true
-  },
-  "include": ["src/**/*"]
+  }
 }

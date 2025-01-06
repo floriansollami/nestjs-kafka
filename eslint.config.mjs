@@ -6,18 +6,12 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: [
-      '**/dist/*',
-      '**/src/__generated__/*',
-      '**/jest.*.js',
-      'commitlint.config.js',
-    ],
+    ignores: [],
   },
   eslint.configs.recommended,
   tseslint.configs.recommended,
   eslintConfigPrettier,
   {
-    files: ['**/*.ts'],
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'error',
       '@typescript-eslint/member-ordering': ['error'],

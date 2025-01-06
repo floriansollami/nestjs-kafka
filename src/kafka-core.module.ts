@@ -1,11 +1,6 @@
-import {
-  Module,
-  type DynamicModule,
-  type OnApplicationShutdown,
-  type Provider,
-} from '@nestjs/common';
+import { Module, type DynamicModule, type OnApplicationShutdown, type Provider } from '@nestjs/common';
 import { CompressionCodecs, CompressionTypes } from 'kafkajs';
-import { createKafkaCodec, type Codec } from './compression/index.js';
+import { createKafkaCodec, type Codec } from './compression/codecs.js';
 import type { KafkaModuleAsyncOptions } from './kafka-options.types.js';
 import { LZ4_CODEC, SNAPPY_CODEC, ZSTD_CODEC } from './kafka.constants.js';
 
@@ -15,7 +10,6 @@ export class KafkaCoreModule implements OnApplicationShutdown {
   constructor() {}
 
   static forRootAsync(options: KafkaModuleAsyncOptions): DynamicModule {
-
     // TODO ajouter un provider pour l'instance
     // kafkajs comme ca quand confluent
     // proposera le sien

@@ -10,10 +10,7 @@ export type KafkaModuleOptions = {
   };
 };
 
-export interface KafkaModuleAsyncOptions
-  extends Pick<ModuleMetadata, 'imports'> {
-  useFactory?: (
-    ...args: unknown[]
-  ) => Promise<KafkaModuleOptions> | KafkaModuleOptions;
+export interface KafkaModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
+  useFactory?: (...args: unknown[]) => Promise<KafkaModuleOptions> | KafkaModuleOptions;
   inject?: unknown[];
 }

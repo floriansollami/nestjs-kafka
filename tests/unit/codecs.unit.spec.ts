@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createKafkaCodec } from './codecs.js';
+import { createKafkaCodec } from '../../src/compression/codecs.js';
 
 const mocks = vi.hoisted(() => {
   return {
@@ -105,7 +105,7 @@ describe('createKafkaCodec', () => {
     });
 
     it('should call compress with the correct arguments and return a Buffer', async () => {
-      const { createKafkaCodec } = await import('./codecs.js');
+      const { createKafkaCodec } = await import('../../src/compression/codecs.js');
       const codec = await createKafkaCodec('ZSTD');
 
       const buffer = Buffer.from('input');
@@ -116,7 +116,7 @@ describe('createKafkaCodec', () => {
     });
 
     it('should call decompress with the correct arguments and return a Buffer', async () => {
-      const { createKafkaCodec } = await import('./codecs.js');
+      const { createKafkaCodec } = await import('../../src/compression/codecs.js');
       const codec = await createKafkaCodec('ZSTD');
 
       const buffer = Buffer.from('input');
@@ -127,11 +127,11 @@ describe('createKafkaCodec', () => {
     });
 
     it('should throw an error if Zstd is already loaded', async () => {
-      const { createKafkaCodec } = await import('./codecs.js');
+      const { createKafkaCodec } = await import('../../src/compression/codecs.js');
 
       await createKafkaCodec('ZSTD');
 
-      const { createKafkaCodec: createKafkaCodec2 } = await import('./codecs.js');
+      const { createKafkaCodec: createKafkaCodec2 } = await import('../../src/compression/codecs.js');
 
       await expect(createKafkaCodec2('ZSTD')).rejects.toThrow('Zstd instance is already loaded.');
     });
