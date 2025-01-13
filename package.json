@@ -80,7 +80,8 @@
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.19.0",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "wait-for-expect": "^3.0.2"
   },
   "peerDependencies": {
     "@nestjs/common": "^10.4.15",

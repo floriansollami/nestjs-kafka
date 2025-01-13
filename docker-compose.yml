@@ -3,18 +3,15 @@ version: '3.8'
 services:
   kafka:
     container_name: kafka
-    image: apache/kafka:latest
+    image: apache/kafka-native:latest
     environment:
-      # Run as both broker + controller in KRaft mode
       KAFKA_PROCESS_ROLES: 'broker,controller'
       KAFKA_NODE_ID: 1
-
-      # Listen on all interfaces, but for ADVERTISED, use the container hostname
-      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093'
-
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT'
-      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092,CONTROLLER://kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -23,17 +20,19 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
       KAFKA_NUM_PARTITIONS: 1
     ports:
-      - '9092:9092'
+      - '9092:9092' # Pour les clients externes
+      - '29092:29092' # Pour les communications internes
     volumes:
       - ./kafka-data:/var/lib/kafka/data
 
   schema-registry:
-    container_name: schema-registry
     image: confluentinc/cp-schema-registry:latest
+    hostname: schema-registry
+    container_name: schema-registry
     environment:
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'PLAINTEXT://kafka:9092'
-      SCHEMA_REGISTRY_LISTENERS: 'http://0.0.0.0:8081'
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'PLAINTEXT://kafka:29092'
       SCHEMA_REGISTRY_HOST_NAME: 'schema-registry'
+      SCHEMA_REGISTRY_LISTENERS: 'http://0.0.0.0:8081'
     ports:
       - '8081:8081'
     depends_on:
