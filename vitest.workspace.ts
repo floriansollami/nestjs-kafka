@@ -29,6 +29,7 @@ export default defineWorkspace([
           singleThread: true,
         },
       },
+      // globalSetup: ['./vitest.global-setup.ts'],
     },
   },
 ]);

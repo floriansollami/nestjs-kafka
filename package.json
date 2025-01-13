@@ -58,7 +58,6 @@
   "dependencies": {
     "@hpcc-js/wasm-zstd": "^1.2.1",
     "@kafkajs/confluent-schema-registry": "^3.4.1",
-    "avsc": "^5.7.7",
     "kafkajs": "^2.2.4",
     "kafkajs-snappy": "^1.1.0",
     "long": "^5.2.3",
@@ -73,6 +72,8 @@
     "@types/lz4": "^0.6.4",
     "@types/node": "^22.10.3",
     "@vitest/coverage-v8": "^2.1.8",
+    "avsc": "^5.7.7",
+    "axios": "^1.7.9",
     "concurrently": "^9.1.2",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",

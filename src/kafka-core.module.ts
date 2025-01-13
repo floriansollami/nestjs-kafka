@@ -50,6 +50,21 @@ export class KafkaCoreModule implements OnApplicationShutdown {
       },
     };
 
+    // ATTENTION le provider de server doit renvoyer une interface
+    // pour faciliter l'override du provider!!!!
+    // dans notre cas c'est un CustomTransportStrategy
+
+    // const serverTemp = {
+    //   provide: KAFKA_SERVER,
+    //   useFactory: async (options: KafkaModuleOptions): Promise<CustomTransportStrategy> => {
+    //     return new KafkaServer({
+    //       kafka: options.config,
+    //       postfixId: options.postfixId,
+    //     });
+    //   },
+    //   inject: [CORE_MODULE_OPTIONS],
+    // };
+
     return {
       module: KafkaCoreModule,
       imports: options.imports,
