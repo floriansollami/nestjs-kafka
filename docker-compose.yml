@@ -16,14 +16,15 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_LOG_DIRS: '/var/lib/kafka/data'
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
       KAFKA_NUM_PARTITIONS: 1
+
+      # Dès qu’un premier consommateur se connecte au groupe, Kafka ne patiente pas pour qu’un deuxième (ou plus) consommateur se joigne avant de répartir les partitions.
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: '0'
+
     ports:
       - '9092:9092' # Pour les clients externes
       - '29092:29092' # Pour les communications internes
-    volumes:
-      - ./kafka-data:/var/lib/kafka/data
 
   schema-registry:
     image: confluentinc/cp-schema-registry:latest

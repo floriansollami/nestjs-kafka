@@ -1,6 +1,7 @@
 import { COMPATIBILITY, SchemaType } from '@kafkajs/confluent-schema-registry';
+import { CompressionTypes } from 'kafkajs';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Fixtures, KafkajsTestHelper } from '../utils/kafkajs-test-helper';
+import { Fixtures, KafkajsTestHelper, SerializerEnum } from '../utils/kafkajs-test-helper';
 
 const fixtures: Fixtures = {
   registryOptions: {
@@ -30,7 +31,7 @@ const fixtures: Fixtures = {
       ],
     },
   ],
-  confluentSchemas: [
+  schemas: [
     {
       schema: {
         type: SchemaType.AVRO,
@@ -43,7 +44,7 @@ const fixtures: Fixtures = {
         references: [],
       },
       options: {
-        subject: 'test-topic-1-test.B',
+        subject: 'test.B', // RecordNameStrategy
         compatibility: COMPATIBILITY.FORWARD_TRANSITIVE,
       },
     },
@@ -62,13 +63,38 @@ const fixtures: Fixtures = {
         references: [
           {
             name: 'test.B',
-            subject: 'test-topic-1-test.B',
+            subject: 'test.B',
             version: 1,
           },
         ],
       },
       options: {
-        subject: 'test-topic-1-test.A',
+        subject: 'test-topic-1-test.A', // TopicRecordNameStrategy
+        compatibility: COMPATIBILITY.FORWARD_TRANSITIVE,
+      },
+    },
+    {
+      schema: {
+        type: SchemaType.AVRO,
+        schema: {
+          type: 'record',
+          name: 'Z',
+          namespace: 'test',
+          fields: [
+            { name: 'identifier', type: 'string' },
+            { name: 'status', type: 'test.B' },
+          ],
+        },
+        references: [
+          {
+            name: 'test.B',
+            subject: 'test.B',
+            version: 1,
+          },
+        ],
+      },
+      options: {
+        subject: 'test-topic-1-test.Z', // TopicRecordNameStrategy
         compatibility: COMPATIBILITY.FORWARD_TRANSITIVE,
       },
     },
@@ -79,68 +105,54 @@ describe('dumb', () => {
   let kafkaTestHelper: KafkajsTestHelper;
 
   beforeAll(async () => {
+    console.time('CREATE');
     kafkaTestHelper = KafkajsTestHelper.create();
+    console.timeEnd('CREATE');
 
     await kafkaTestHelper.setUp(fixtures);
-    await kafkaTestHelper.subscribe('test-topic-1');
+    const topic = fixtures.topics[0].topicName;
+
+    await kafkaTestHelper.subscribe(topic);
   });
 
   beforeEach(() => {
-    // kafkaTestHelper.clearMessages();
+    kafkaTestHelper.clearMessages();
   });
 
   afterAll(async () => {
     await kafkaTestHelper.cleanUp();
   });
 
-  it('should ', () => {
+  it('should ', async () => {
+    const topic = fixtures.topics[0].topicName;
+
+    await kafkaTestHelper.produce<string, { identifier: string; status: string }>(
+      topic,
+      [
+        {
+          key: 'key-1',
+          value: { identifier: 'id-1', status: 'CREATED' },
+        },
+        {
+          key: 'key-1',
+          value: { identifier: 'id-1', status: 'UPDATED' },
+        },
+      ],
+      {
+        keySerializer: SerializerEnum.STRING,
+        valueSerializer: SerializerEnum.AVRO,
+        valueSubject: 'test-topic-1-test.A',
+        compression: CompressionTypes.GZIP,
+      },
+    );
+
+    // TODO vitest propose expect.poll et expect.timeout plus besoin de la lib
+    await kafkaTestHelper.waitForMessages(2);
+
+    // console.log(kafkaTestHelper.getMessages());
+
+    // expect(kafkaHelper.getMessages().map(msg => msg.value.toString())).toEqual(messagesToProduce);
+
     expect(1 + 1).toBe(2);
   });
-
-  //   // TESTER LE BATCH EN ERREUR AVEC LES EVENT EMITTER
-  // // 1. Produce messages (one that will cause an error)
-  // const testTopic = "test.batch.topic";
-  // await produceMessages(testTopic, [
-  //   { key: "ok-1", value: JSON.stringify({ msg: "good-1" }) },
-  //   { key: "ok-2", value: JSON.stringify({ msg: "good-2" }) },
-  //   { key: "FAIL", value: JSON.stringify({ msg: "will-fail" }) },
-  //   { key: "ok-3", value: JSON.stringify({ msg: "good-3" }) },
-  // ]);
-
-  // // 2. Wait until we detect that all messages have been processed
-  // //    (or we time out). For example, we might expect 3 successes + 1 error.
-  // await waitForCondition(() => {
-  //   // dans notre cas ce serait 3 republish dans un nouveau topic
-  //   // + 1 dans le error handler
-  //   return consumedSuccesses.length + consumedErrors.length >= 4;
-  // }, 10000); // wait up to 10s
-
-  // // 3. Assertions on the *real* side effects:
-  // //    - 3 "success" messages consumed
-  // //    - 1 "error" message consumed
-  // expect(consumedSuccesses.length).toBe(3);
-  // expect(consumedErrors.length).toBe(1);
-
-  // // 4. Check that the same failing message is not re-processed
-  // //    We'll wait a little longer to ensure Kafka doesn't redeliver.
-  // await new Promise((resolve) => setTimeout(resolve, 2000));
-
-  // test('should consume all messages from the topic in test 1', async () => {
-  //   const messages = ['message1', 'message2'];
-
-  //   await kafkaHelper.produce(messages);
-  //   await kafkaHelper.waitForMessages(messagesToProduce.length);
-
-  //   expect(kafkaHelper.getMessages().map((msg) => msg.value.toString())).toEqual(messagesToProduce);
-  // });
-
-  // test('should consume all messages from the topic in test 2', async () => {
-  //   const messages = ['message3', 'message4', 'message5'];
-  //   await kafkaHelper.produce(messagesToProduce);
-
-  //   await kafkaHelper.waitForMessages(messagesToProduce.length);
-
-  //   const messages = kafkaHelper.getMessages();
-  //   expect(messages.map((msg) => msg.value.toString())).toEqual(messagesToProduce);
-  // });
 });

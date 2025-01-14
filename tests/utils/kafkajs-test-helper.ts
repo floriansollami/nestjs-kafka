@@ -5,12 +5,22 @@ import {
   ProtocolOptions,
   ProtoConfluentSchema,
 } from '@kafkajs/confluent-schema-registry/dist/@types';
+import { isPlainObject } from '@nestjs/common/utils/shared.utils';
 import { schema } from 'avsc';
 import axios, { type AxiosInstance } from 'axios';
-import { type Admin, Consumer, type ITopicConfig, Kafka, KafkaMessage, logLevel, Producer } from 'kafkajs';
+import {
+  type Admin,
+  CompressionTypes,
+  Consumer,
+  IHeaders,
+  type ITopicConfig,
+  Kafka,
+  Message as KafkaJSProduceMessage,
+  KafkaMessage,
+  logLevel,
+  Producer,
+} from 'kafkajs';
 import { expect } from 'vitest';
-import waitForExpect from 'wait-for-expect';
-
 /*
 | Behavior           | TopicNameStrategy                                 | RecordNameStrategy           | TopicRecordNameStrategy                    |
 |--------------------|---------------------------------------------------|------------------------------|--------------------------------------------|
@@ -19,33 +29,70 @@ import waitForExpect from 'wait-for-expect';
 fully-qualified record name (FQN) = avro record <namespace> + <name>
 */
 
-export type AvscAvroSchema = schema.AvroSchema;
-
 type TopicConfig = {
   topicName: ITopicConfig['topic'];
   configEntries?: ITopicConfig['configEntries'];
 };
 
-type sAvroConfluentSchema = Omit<AvroConfluentSchema, 'schema'> & { schema: AvscAvroSchema };
+type AvscAvroConfluentSchema = Omit<AvroConfluentSchema, 'schema'> & { schema: schema.AvroSchema };
 
-type schema = sAvroConfluentSchema | ProtoConfluentSchema | JsonConfluentSchema;
-
-type ConfluentSchemaOptions = {
+type SchemaOptions = {
   compatibility?: COMPATIBILITY;
   separator?: string;
   subject: string;
 };
 
-type ConfluentSchema = {
-  schema: schema;
-  options: ConfluentSchemaOptions;
+type SchemaDescriptor = {
+  schema: AvscAvroConfluentSchema | ProtoConfluentSchema | JsonConfluentSchema;
+  options: SchemaOptions;
 };
 
 export type Fixtures = {
   registryOptions?: ProtocolOptions;
   topics: TopicConfig[];
-  confluentSchemas: ConfluentSchema[];
+  schemas: SchemaDescriptor[];
 };
+
+export enum SerializerEnum {
+  AVRO,
+  JSON,
+  STRING,
+  VOID,
+}
+
+// type ProduceMessage = {
+//   key?: Buffer | string | null;
+//   value: Buffer | string | null;
+//   partition?: number;
+//   headers?: IHeaders;
+//   timestamp?: string;
+// };
+
+interface ProduceMessage<TKey = unknown, TValue = unknown> {
+  key?: TKey;
+  value: TValue;
+  partition?: number;
+  headers?: IHeaders;
+  timestamp?: string;
+}
+
+// type SerializerToType<S extends SerializerEnum> = S extends SerializerEnum.AVRO
+//   ? Record<string, unknown>
+//   : S extends SerializerEnum.JSON
+//     ? unknown
+//     : S extends SerializerEnum.STRING
+//       ? string
+//       : S extends SerializerEnum.VOID
+//         ? null
+//         : never;
+
+interface ProduceConfig {
+  keySerializer: SerializerEnum;
+  valueSerializer: SerializerEnum;
+  keySubject?: string;
+  valueSubject?: string;
+  compression?: CompressionTypes;
+}
 
 export class KafkajsTestHelper {
   private readonly kafka: Kafka;
@@ -61,7 +108,7 @@ export class KafkajsTestHelper {
   private latestConsumedOffset = -1n;
 
   private topics: Fixtures['topics'] = [];
-  private confluentSchemas: Fixtures['confluentSchemas'] = [];
+  private schemas: Fixtures['schemas'] = [];
 
   private constructor() {
     this.kafka = new Kafka({
@@ -123,7 +170,9 @@ export class KafkajsTestHelper {
     await this.kafkaAdmin.connect();
 
     await this.createTopics(fixtures.topics);
-    await this.registerSchemas(fixtures.confluentSchemas);
+    console.time('REGISTER');
+    await this.registerSchemas(fixtures.schemas);
+    console.timeEnd('REGISTER');
 
     await Promise.all([this.setupConsumer(), this.setupProducer()]);
 
@@ -133,12 +182,13 @@ export class KafkajsTestHelper {
   }
 
   async subscribe(topic: string | RegExp, fromBeginning = true): Promise<void> {
+    console.time('SUBSCRIBE_DURATION');
+
     if (!this.consumer) {
-      throw new Error('Consumer is not initialized. Call setupEnvironment first.');
+      throw new Error('Consumer is not initialized. Call setup() first.');
     }
 
     await this.consumer.subscribe({ topics: [topic], fromBeginning });
-    console.time('SUBSCRIBE_DURATION');
     await this.consumer.run({
       autoCommit: true,
       autoCommitInterval: null,
@@ -147,7 +197,8 @@ export class KafkajsTestHelper {
       partitionsConsumedConcurrently: 1,
       eachBatch: undefined,
       eachMessage: async ({ message }) => {
-        console.log('florian');
+        // NOTE: kafkajs sends an heartbeat each time after this function has been executed
+        console.log('un messssage arrive');
         this.consumedMessages.push(message);
         this.latestConsumedOffset = BigInt(message.offset);
       },
@@ -155,10 +206,40 @@ export class KafkajsTestHelper {
     console.timeEnd('SUBSCRIBE_DURATION');
   }
 
-  async waitForMessages(expectedCount, timeout = 5000): Promise<void> {
-    await waitForExpect(() => {
-      expect(this.consumedMessages.length).toBe(expectedCount);
-    }, timeout);
+  async produce<K, V>(topic: string, messages: ProduceMessage<K, V>[], config: ProduceConfig): Promise<void> {
+    console.time('PRODUCE');
+    if (!this.producer) {
+      throw new Error('Producer is not initialized. Call setup() first.');
+    }
+
+    // Using Promise.all or Promise.allSettled here is inefficient because the cache in
+    // kafkajs/confluent-schema-registry only stores the schema for a given schema ID, not promises.
+    // This causes 500 cache misses and HTTP calls for a batch of 500 messages, as parallel deserialization
+    // bypasses caching. Sequential processing ensures cache hits and avoids excessive HTTP calls.
+
+    const serializedMessages: KafkaJSProduceMessage[] = [];
+
+    for (const message of messages) {
+      serializedMessages.push({
+        // NOTE: KafkaJS will internally transform the headers values into Buffer
+        ...message,
+        key: message.key ? await this.serialize(config.keySerializer, message.key) : undefined,
+        value: await this.serialize(config.valueSerializer, message.value, config.valueSubject),
+      });
+    }
+
+    await this.producer.send({
+      topic,
+      messages: serializedMessages,
+      compression: config.compression,
+    });
+
+    console.timeEnd('PRODUCE');
+    console.log();
+  }
+
+  async waitForMessages(expectedCount: number, timeout = 5000): Promise<void> {
+    await expect.poll(() => this.consumedMessages.length, { interval: 1, timeout }).toBe(expectedCount);
   }
 
   getMessages(): KafkaMessage[] {
@@ -173,10 +254,8 @@ export class KafkajsTestHelper {
     console.time('CLEAN_UP_DURATION');
 
     await Promise.all([this.cleanUpConsumer(), this.cleanUpProducer()]);
-
     await this.deleteSchemas();
     await this.deleteTopics();
-
     await this.kafkaAdmin.disconnect();
 
     console.timeEnd('CLEAN_UP_DURATION');
@@ -190,7 +269,7 @@ export class KafkajsTestHelper {
     try {
       const created = await this.kafkaAdmin.createTopics({
         validateOnly: false,
-        waitForLeaders: true,
+        waitForLeaders: false, // CAN BE DANGEROUS KEEP IN MIND
         timeout: 1000,
         topics: topics.map(topicConfig => ({
           topic: topicConfig.topicName,
@@ -207,79 +286,46 @@ export class KafkajsTestHelper {
 
       this.topics = topics;
     } catch (error) {
-      console.log('flooooo ', error);
+      console.error('Failed to create topics.');
+      throw error;
     }
   }
 
-  private async registerSchemas(confluentSchemas: ConfluentSchema[]): Promise<void> {
+  private async registerSchemas(schemas: SchemaDescriptor[]): Promise<void> {
     if (!this.schemaRegistry) {
-      throw new Error('SchemaRegistry is not initialized. Call setupEnvironment first.');
+      throw new Error('SchemaRegistry is not initialized. Call setup() first.');
     }
 
-    for (const confluentSchema of confluentSchemas) {
+    // should be a sequential registration (references)
+    for (const confluentSchema of schemas) {
       try {
         await this.schemaRegistry.register(
           {
             type: confluentSchema.schema.type,
-            schema: JSON.stringify(confluentSchema.schema.schema), // to make typing working
+            schema: JSON.stringify(confluentSchema.schema.schema), // stringifify to match type
             references: confluentSchema.schema.references,
           },
           confluentSchema.options,
         );
       } catch (error) {
-        console.log('ici ', error);
+        console.error(`Failed to register schema with subject: "${confluentSchema.options.subject}".`);
+        throw error;
       }
     }
 
-    this.confluentSchemas = confluentSchemas;
+    this.schemas = schemas;
   }
 
   private async setupConsumer(): Promise<void> {
     if (!this.consumer) {
-      // 5 ms
-
       this.consumer = this.kafka.consumer({
-        groupId: 'test-integration-consumer-id',
-
-        //  groupId: string
-        //   partitionAssigners?: PartitionAssigner[]
-        //   metadataMaxAge?: number
-
-        // Le sessionTimeout est la durée maximale qu'un consommateur peut rester inactif
-        // (c'est-à-dire sans envoyer de heartbeats) avant que le coordonateur de groupe (group coordinator)
-        // de Kafka ne considère que ce consommateur est mort ou déconnecté.
-        // Si le coordonnateur ne reçoit pas de heartbeat dans ce délai, il déclenche une rééquilibrage (rebalance) du groupe.
-
-        // Pour des tests où vous souhaitez une détection rapide des consommateurs inactifs afin de stopper rapidement si aucun message n'est produit :
-        sessionTimeout: 1000, // 1 seconde
-        rebalanceTimeout: 1000, // 1 seconde
-        heartbeatInterval: 300, // 300 millisecondes
-        //   maxBytesPerPartition?: number
-
-        // Le consommateur envoie une requête au serveur Kafka pour obtenir des messages.
-        // Si la quantité de données disponibles est inférieure à minBytes, le serveur
-        // attend que davantage de données s'accumulent (maxWaitTimeInMs), jusqu'à atteindre ce seuil, avant de répondre.
-        // Une valeur élevée peut améliorer le débit en réduisant le nombre de requêtes, mais augmente la latence,
-        // car le consommateur attend plus longtemps pour recevoir les données.
-        // minBytes: 1,
-
-        // Quantité maximale de données (en octets) que le consommateur peut recevoir en une seule requête.
-        // Une valeur trop basse peut limiter le débit en restreignant la quantité de données reçues par requête,
-        // tandis qu'une valeur trop élevée peut entraîner une surcharge de mémoire chez le consommateur.
-        // maxBytes: 1024,
-
-        // maxWaitTimeInMs: 50,
-
-        // Set to 1 byte to ensure the consumer processes messages as soon as they are available,
-        // minimizing latency during tests.
+        groupId: `test-integration-consumer-${Date.now()}`,
+        // sessionTimeout: 200,
+        // rebalanceTimeout: 400,
+        // heartbeatInterval: 50,
+        // maxWaitTimeInMs: 5,
         minBytes: 1,
-        // Limit to 512 bytes to handle small payloads efficiently, preventing excessive memory usage
-        // while accommodating the expected message size in integration tests.
         maxBytes: 512,
-        // Set to 5 milliseconds to reduce the wait time for message retrieval, ensuring rapid processing
-        // and quick test execution, suitable for scenarios with low message throughput.
-        maxWaitTimeInMs: 5,
-
         retry: {
           maxRetryTime: 2000,
           initialRetryTime: 50,
@@ -288,44 +334,80 @@ export class KafkajsTestHelper {
           retries: 2,
         },
         allowAutoTopicCreation: false,
-        // maxInFlightRequests: prendre le default,
-        //   readUncommitted?: boolean
-        //   rackId?: string
       });
+
       await this.consumer.connect();
     }
   }
 
   private async setupProducer(): Promise<void> {
-    // 10 ms
     if (!this.producer) {
       this.producer = this.kafka.producer({
         allowAutoTopicCreation: false,
-
-        // createPartitioner?: ICustomPartitioner
-        //   retry?: RetryOptions
-        //   metadataMaxAge?: number
-        //   allowAutoTopicCreation?: boolean
-        //   idempotent?: boolean
-        //   transactionalId?: string
-        //   transactionTimeout?: number
-        //   maxInFlightRequests?: number
+        retry: {
+          maxRetryTime: 2000,
+          initialRetryTime: 50,
+          factor: 1.1,
+          multiplier: 0.5,
+          retries: 2,
+        },
+        idempotent: false,
       });
       await this.producer.connect();
     }
   }
 
+  private async serialize(serializer: SerializerEnum, value: unknown, subject?: string): Promise<Buffer | string | null> {
+    switch (serializer) {
+      case SerializerEnum.AVRO: {
+        if (!this.schemaRegistry) {
+          throw new Error('SchemaRegistry is not initialized. Call setup() first.');
+        }
+
+        if (!subject) {
+          throw new Error('Missing subject for AVRO serializer');
+        }
+
+        // TODO use a cache <topic, schemaId> or it is negligebale
+        const schemaId = await this.schemaRegistry.getLatestSchemaId(subject);
+
+        return await this.schemaRegistry.encode(schemaId, value);
+      }
+
+      case SerializerEnum.JSON: {
+        if (isPlainObject(value) || Array.isArray(value)) {
+          return JSON.stringify(value);
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (value as any).toString();
+      }
+
+      case SerializerEnum.STRING:
+        return (value as string).toString();
+
+      case SerializerEnum.VOID:
+        return null;
+
+      default:
+        throw new Error(`Unsupported serializer: "${serializer}"`);
+    }
+  }
+
   private async deleteSchemas(): Promise<void> {
-    for (const { options } of this.confluentSchemas.reverse()) {
+    for (const schema of this.schemas.reverse()) {
+      const { subject } = schema.options;
+
       try {
-        await this.axiosInstance.delete(`/subjects/${options.subject}`);
-        await this.axiosInstance.delete(`/subjects/${options.subject}?permanent=true`);
+        await this.axiosInstance.delete(`/subjects/${subject}`);
+        await this.axiosInstance.delete(`/subjects/${subject}?permanent=true`);
       } catch (error) {
-        console.error(`Failed to delete schema subject: ${options.subject}`, error);
+        console.error(`Failed to delete schema subject: "${subject}".`);
+        throw error;
       }
     }
 
-    this.confluentSchemas = [];
+    this.schemas = [];
   }
 
   private async deleteTopics(): Promise<void> {
