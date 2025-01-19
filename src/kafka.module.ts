@@ -18,4 +18,29 @@ export class KafkaModule {
       imports: [KafkaCoreModule.forRootAsync(options)],
     };
   }
+
+  static forFeature(topicDefinitions: TopicDefinition[] = []): DynamicModule {
+    const factories: AsyncTopicFactory[] = topicDefinitions.map(definition => ({
+      name: definition.name,
+      type: definition.type,
+      imports: [],
+      useFactory: async (): Promise<TopicDefinition['topic']> => definition.topic,
+      inject: [],
+    }));
+
+    return this.forFeatureAsync(factories);
+  }
+
+  static forFeatureAsync(factories: AsyncTopicFactory[] = []): DynamicModule {
+    const providers = createKafkaAsyncProviders(factories);
+    const imports = factories.map(factory => factory.imports ?? []);
+    const uniqImports = new Set(flatten(imports));
+
+    return {
+      module: KafkaModule,
+      imports: [...uniqImports],
+      providers,
+      exports: [],
+    };
+  }
 }

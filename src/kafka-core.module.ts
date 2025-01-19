@@ -1,8 +1,12 @@
 import { Module, type DynamicModule, type OnApplicationShutdown, type Provider } from '@nestjs/common';
 import { CompressionCodecs, CompressionTypes } from 'kafkajs';
 import { createKafkaCodec, type Codec } from './compression/codecs.js';
-import type { KafkaModuleAsyncOptions } from './kafka-options.types.js';
-import { LZ4_CODEC, SNAPPY_CODEC, ZSTD_CODEC } from './kafka.constants.js';
+import type { KafkaModuleAsyncOptions, KafkaModuleOptions } from './kafka-options.types.js';
+import { CORE_MODULE_OPTIONS, KAFKA_SERVER, KAFKA_SERVICE, LZ4_CODEC, SNAPPY_CODEC, ZSTD_CODEC } from './kafka.constants.js';
+import { KafkaServer } from './server/kafka-server.js';
+import { KafkaClient } from './client/kafka-client.js';
+import { MessageService } from './client/message-service.interface.js';
+import { CustomTransportStrategy } from '@nestjs/microservices';
 
 // @Global()
 @Module({})
@@ -50,27 +54,44 @@ export class KafkaCoreModule implements OnApplicationShutdown {
       },
     };
 
-    // ATTENTION le provider de server doit renvoyer une interface
-    // pour faciliter l'override du provider!!!!
-    // dans notre cas c'est un CustomTransportStrategy
+    const coreModuleOptionsProvider: Provider = {
+      provide: CORE_MODULE_OPTIONS,
+      useFactory: options.useFactory,
+      inject: options.inject ?? [],
+    };
 
-    // const serverTemp = {
-    //   provide: KAFKA_SERVER,
-    //   useFactory: async (options: KafkaModuleOptions): Promise<CustomTransportStrategy> => {
-    //     return new KafkaServer({
-    //       kafka: options.config,
-    //       postfixId: options.postfixId,
-    //     });
-    //   },
-    //   inject: [CORE_MODULE_OPTIONS],
-    // };
+    const serverTemp = {
+      provide: KAFKA_SERVER,
+      useFactory: async (options: KafkaModuleOptions): Promise<CustomTransportStrategy> => {
+        return new KafkaServer({
+          kafka: options.config,
+          postfixId: options.postfixId,
+        });
+      },
+      inject: [CORE_MODULE_OPTIONS],
+    };
+
+    const clientTemp = {
+      provide: KAFKA_SERVICE,
+      useFactory: async (options: KafkaModuleOptions): Promise<MessageService> => {
+        return new KafkaClient({
+          kafka: options.config,
+          postfixId: options.postfixId,
+        });
+      },
+      inject: [CORE_MODULE_OPTIONS],
+    };
 
     return {
       module: KafkaCoreModule,
       imports: options.imports,
-      providers: [lz4CodecProvider, snappyCodecProvider, zstdCodecProvider],
-      exports: [],
+      providers: [coreModuleOptionsProvider, snappyCodecProvider, zstdCodecProvider, lz4CodecProvider, serverTemp, clientTemp],
+      exports: [CORE_MODULE_OPTIONS, serverTemp, clientTemp],
     };
+
+    // ATTENTION le provider de server doit renvoyer une interface
+    // pour faciliter l'override du provider!!!!
+    // dans notre cas c'est un CustomTransportStrategy
   }
 
   async onApplicationShutdown(): Promise<void> {}

@@ -11,6 +11,8 @@ export type KafkaModuleOptions = {
 };
 
 export interface KafkaModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
-  useFactory?: (...args: unknown[]) => Promise<KafkaModuleOptions> | KafkaModuleOptions;
-  inject?: unknown[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  useFactory: (...args: any[]) => Promise<KafkaModuleOptions> | KafkaModuleOptions;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  inject?: any[];
 }

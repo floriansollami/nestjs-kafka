@@ -1,7 +1,7 @@
 import { COMPATIBILITY, SchemaType } from '@kafkajs/confluent-schema-registry';
 import { CompressionTypes } from 'kafkajs';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Fixtures, KafkajsTestHelper, SerializerEnum } from '../utils/kafkajs-test-helper';
+import { DeserializerEnum, Fixtures, KafkajsTestHelper, SerializerEnum } from '../utils/kafkajs-test-helper';
 
 const fixtures: Fixtures = {
   registryOptions: {
@@ -16,35 +16,20 @@ const fixtures: Fixtures = {
       // wrapUnions: boolean | 'auto' | 'always' | 'never';
     },
   },
-  topics: [
-    {
-      topicName: 'test-topic-1',
-      configEntries: [
-        {
-          name: 'cleanup.policy',
-          value: 'delete',
-        },
-        {
-          name: 'compression.type',
-          value: 'gzip',
-        },
-      ],
-    },
-  ],
   schemas: [
     {
       schema: {
         type: SchemaType.AVRO,
         schema: {
           type: 'enum',
-          name: 'B',
-          namespace: 'test',
-          symbols: ['CREATED', 'UPDATED', 'DELETED'],
+          name: 'StockStatus',
+          namespace: 'com.example.stock',
+          symbols: ['AVAILABLE', 'OUT_OF_STOCK', 'DISCONTINUED'],
         },
         references: [],
       },
       options: {
-        subject: 'test.B', // RecordNameStrategy
+        subject: 'com.example.stock.StockStatus', // RecordNameStrategy
         compatibility: COMPATIBILITY.FORWARD_TRANSITIVE,
       },
     },
@@ -53,23 +38,24 @@ const fixtures: Fixtures = {
         type: SchemaType.AVRO,
         schema: {
           type: 'record',
-          name: 'A',
-          namespace: 'test',
+          name: 'StockAvailable',
+          namespace: 'com.example.stock',
           fields: [
-            { name: 'identifier', type: 'string' },
-            { name: 'status', type: 'test.B' },
+            { name: 'productId', type: 'string' },
+            { name: 'quantity', type: 'int' },
+            { name: 'status', type: 'com.example.stock.StockStatus' },
           ],
         },
         references: [
           {
-            name: 'test.B',
-            subject: 'test.B',
+            name: 'com.example.stock.StockStatus',
+            subject: 'com.example.stock.StockStatus',
             version: 1,
           },
         ],
       },
       options: {
-        subject: 'test-topic-1-test.A', // TopicRecordNameStrategy
+        subject: 'test-stocks-topic-com.example.stock.StockAvailable', // TopicRecordNameStrategy
         compatibility: COMPATIBILITY.FORWARD_TRANSITIVE,
       },
     },
@@ -78,41 +64,56 @@ const fixtures: Fixtures = {
         type: SchemaType.AVRO,
         schema: {
           type: 'record',
-          name: 'Z',
-          namespace: 'test',
+          name: 'StockOutage',
+          namespace: 'com.example.stock',
           fields: [
-            { name: 'identifier', type: 'string' },
-            { name: 'status', type: 'test.B' },
+            { name: 'productId', type: 'string' },
+            { name: 'status', type: 'com.example.stock.StockStatus' },
+            { name: 'expectedRestockDate', type: ['null', 'string'], default: null },
           ],
         },
         references: [
           {
-            name: 'test.B',
-            subject: 'test.B',
+            name: 'com.example.stock.StockStatus',
+            subject: 'com.example.stock.StockStatus',
             version: 1,
           },
         ],
       },
       options: {
-        subject: 'test-topic-1-test.Z', // TopicRecordNameStrategy
+        subject: 'test-stocks-topic-com.example.stock.StockOutage', // TopicRecordNameStrategy
         compatibility: COMPATIBILITY.FORWARD_TRANSITIVE,
       },
     },
   ],
+  topics: [
+    {
+      name: 'test-stocks-topic',
+      configEntries: [
+        { name: 'cleanup.policy', value: 'delete' },
+        { name: 'compression.type', value: 'gzip' },
+      ],
+    },
+  ],
+  consumer: {
+    topic: 'test-stocks-topic',
+    keyDeserializer: DeserializerEnum.STRING,
+    valueDeserializer: DeserializerEnum.AVRO,
+  },
+  producer: {
+    topic: 'test-stocks-topic',
+    keySerializer: SerializerEnum.STRING,
+    valueSerializer: SerializerEnum.AVRO,
+  },
 };
 
 describe('dumb', () => {
   let kafkaTestHelper: KafkajsTestHelper;
 
   beforeAll(async () => {
-    console.time('CREATE');
     kafkaTestHelper = KafkajsTestHelper.create();
-    console.timeEnd('CREATE');
 
     await kafkaTestHelper.setUp(fixtures);
-    const topic = fixtures.topics[0].topicName;
-
-    await kafkaTestHelper.subscribe(topic);
   });
 
   beforeEach(() => {
@@ -123,30 +124,37 @@ describe('dumb', () => {
     await kafkaTestHelper.cleanUp();
   });
 
-  it('should ', async () => {
-    const topic = fixtures.topics[0].topicName;
+  enum StockStatus {
+    'AVAILABLE' = 'AVAILABLE',
+    'OUT_OF_STOCK' = 'OUT_OF_STOCK',
+    'DISCONTINUED' = 'DISCONTINUED',
+  }
 
-    await kafkaTestHelper.produce<string, { identifier: string; status: string }>(
-      topic,
+  type StockAvailable = { productId: string; quantity: number; status: StockStatus.AVAILABLE };
+  type StockOutage = { productId: string; status: StockStatus.OUT_OF_STOCK; expectedRestockDate: string | null };
+
+  it('should ', async () => {
+    // le typage K, V
+    // ne marche plus car depend du subject...
+    await kafkaTestHelper.produce<string, StockAvailable | StockOutage>(
+      fixtures.topics[0].name,
       [
         {
           key: 'key-1',
-          value: { identifier: 'id-1', status: 'CREATED' },
+          value: { productId: 'productId1', quantity: 1, status: StockStatus.AVAILABLE },
+          // keySubject: "",
+          valueSubject: 'test-stocks-topic-com.example.stock.StockAvailable',
         },
+
         {
           key: 'key-1',
-          value: { identifier: 'id-1', status: 'UPDATED' },
+          value: { productId: 'productId2', status: StockStatus.OUT_OF_STOCK, expectedRestockDate: '2025-01-01' },
+          valueSubject: 'test-stocks-topic-com.example.stock.StockOutage',
         },
       ],
-      {
-        keySerializer: SerializerEnum.STRING,
-        valueSerializer: SerializerEnum.AVRO,
-        valueSubject: 'test-topic-1-test.A',
-        compression: CompressionTypes.GZIP,
-      },
+      CompressionTypes.GZIP,
     );
 
-    // TODO vitest propose expect.poll et expect.timeout plus besoin de la lib
     await kafkaTestHelper.waitForMessages(2);
 
     // console.log(kafkaTestHelper.getMessages());
