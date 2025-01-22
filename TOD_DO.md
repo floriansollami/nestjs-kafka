@@ -36,3 +36,8 @@ OPEN ISSUE: nestjs/nest#11298 LINKED ISSUE: nestjs/nest#13421
 Meme nest ne propose pas encore de solution
 
 Tout comme Nest, cette librairie actuellement ne propose la consommation de messages d'un seul topic.
+
+
+TODO:
+- dire que pour utiliser la lib il faut dans le main.ts:
+   const strategy = app.get<CustomTransportStrategy>(KAFKA_SERVER);

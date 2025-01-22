@@ -1,4 +1,4 @@
-# @fsol/nestjs-kafka
+# @fsol/nestjs-kafka [WIP]
 
 > **Note:** During the development of `@fsol/nestjs-kafka`, Confluent introduced [`confluent-kafka-javascript`](https://github.com/confluentinc/confluent-kafka-javascript), a native JavaScript client for Apache Kafka. This client aims to provide high performance and reliability by leveraging the `librdkafka` C library. However, as of now, it is not yet production-ready. Therefore, our library continues to utilize `KafkaJS` to ensure stability in production environments. We are monitoring the progress of `confluent-kafka-javascript` and will consider its integration once it matures.
 
